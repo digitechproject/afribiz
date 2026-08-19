@@ -1,0 +1,369 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(uuid())
+  firstName       String
+  lastName        String
+  email           String          @unique
+  phone           String          @unique
+  password        String
+  avatar          String?
+  ifu             String?         // Optional personal IFU
+  nationality     String?
+  city            String?
+  country         String?         @default("Bénin")
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  status          String          @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  memberships     Membership[]
+  otps            OTPCode[]
+  sessions        Session[]
+  passwordResets  PasswordReset[]
+  auditLogs       AuditLog[]
+
+  // V5 Personal and Professional Profile
+  birthDate         DateTime?
+  address           String?
+  preferredLanguage String          @default("fr")
+  jobTitle          String?
+  skills            String[]        @default([])
+  experienceYears   Int?
+  educationLevel    String?
+  certifications    String[]        @default([])
+  portfolioUrl      String?
+  availability      String?
+  collaborationType String?
+  currentStatus     String?
+
+  documents       Document[]
+  documentShares  DocumentShare[]
+}
+
+model Company {
+  id                    String         @id @default(uuid())
+  ownerUserId           String
+  name                  String
+  legalName             String?
+  slug                  String         @unique
+  subdomain             String?        @unique
+  sector                String
+  country               String
+  city                  String
+  phone                 String
+  email                 String?
+  logo                  String?
+  primaryColor          String?        @default("#0f766e") // Emerald default
+  subscriptionPlan      String         @default("TRIAL") // TRIAL, SOLO, STARTER, BUSINESS, ENTERPRISE
+  trialEndsAt           DateTime
+  onboardingCompleted   Boolean        @default(false)
+  onboardingCurrentStep String         @default("SECTOR") // SECTOR, GOALS, BRANDING, PLAN, SETUP
+  status                String         @default("ACTIVE")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  memberships           Membership[]
+  summary               TenantSummary?
+  invitations           Invitation[]
+  auditLogs             AuditLog[]
+  customDomains         CustomDomain[]
+  branding              TenantBranding?
+
+  // V5 Company Structure & Documents
+  departments     CompanyDepartment[]
+  positions       CompanyPosition[]
+  issuedDocuments Document[]          @relation("IssuedDocuments")
+
+  // V2 Formalization Fields
+  activityType          String         @default("FREELANCE") // FREELANCE, INDIVIDUAL_ESTABLISHMENT, SOCIETY, ONG_ASSOCIATION, etc.
+  legalForm             String?        // SARL, SUARL, SAS, SA, GIE, SCI, SCP, etc.
+  formalizationLevel    String         @default("PERSONAL_IFU_ONLY") // NOT_FORMALIZED, PERSONAL_IFU_ONLY, ESTABLISHMENT_RCCM, SOCIETY_RCCM_IFU, etc.
+  rccm                  String?        // RCCM number
+  companyIfu            String?        // Company IFU
+  representativeName    String?        // Corporate representative name
+  representativeIfu     String?        // Corporate representative IFU
+  capitalSocial         Float?
+  associatesCount       Int?
+  address               String?
+  administrativeStatus  String         @default("PENDING_VERIFICATION") // PENDING_VERIFICATION, ACTIVE, VERIFIED, etc.
+}
+
+model TenantBranding {
+  id              String   @id @default(uuid())
+  companyId       String   @unique
+  logoUrl         String?
+  faviconUrl      String?
+  loginBannerUrl  String?
+  primaryColor    String   @default("#0f766e")
+  secondaryColor  String   @default("#0284c7")
+  accentColor     String   @default("#f59e0b")
+  fontFamily      String?  @default("Inter")
+  loginHeadline   String?
+  loginTagline    String?
+  customCss       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model CustomDomain {
+  id               String   @id @default(uuid())
+  companyId        String
+  domain           String   @unique
+  status           String   @default("PENDING_VERIFICATION") // PENDING_VERIFICATION, ACTIVE, FAILED
+  verificationCode String   @default(uuid())
+  sslStatus        String   @default("PENDING") // PENDING, ACTIVE, ERROR
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  roleId    String   // SUPER_ADMIN, ADMIN, MANAGER, COMPTABLE, COLLABORATOR, etc.
+  status    String   @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED, INVITED
+  invitedBy String?
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // V5 Professional Relationship Details
+  position            String?
+  department          String?
+  collaborationStatus String?        // EMPLOYEE, INTERN, CONTRACTOR, CONSULTANT, etc.
+  startDate           DateTime?
+  endDate             DateTime?
+  managerId           String?
+  allowedModules      String[]       @default([])
+  customPermissions   String[]       @default([])
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+}
+
+model Role {
+  id          String   @id // SUPER_ADMIN, ADMIN, MANAGER, COMPTABLE, COLLABORATOR, EMPLOYEE, VIEWER
+  name        String
+  description String
+  isSystem    Boolean  @default(true)
+  permissions String[] @default([]) // Array of permission codes attached to this role
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Permission {
+  id          String   @id // Perm ID / Code
+  code        String   @unique
+  name        String
+  module      String   // e.g., "SETTINGS", "MEMBERS", "DOCUMENTS", "HR", "BILLING", "CLIENTS", "PROJECTS"
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  companyId   String?
+  action      String   // e.g., "AUTH_LOGIN", "DOCUMENT_DELETE", "COMPANY_UPDATE", "INVITE_SENT"
+  entity      String   // e.g., "USER", "COMPANY", "DOCUMENT", "MEMBERSHIP"
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model TenantSummary {
+  tenantId            String   @id
+  employeesCount      Int      @default(0)
+  clientsCount        Int      @default(0)
+  invoicesCount       Int      @default(0)
+  monthlyRevenue      Float    @default(0.0)
+  unpaidInvoicesCount Int      @default(0)
+  tasksCount          Int      @default(0)
+  projectsCount       Int      @default(0)
+  storageUsed         BigInt   @default(0)
+  lastActivityAt      DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company Company @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model OTPCode {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  status    String   @default("PENDING") // PENDING, VERIFIED, EXPIRED
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Invitation {
+  id        String   @id @default(uuid())
+  email     String
+  companyId String
+  roleId    String
+  token     String   @unique
+  status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED, CANCELLED
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // V5 Advanced Invitation Details
+  firstName           String?
+  lastName            String?
+  phone               String?
+  position            String?
+  department          String?
+  collaborationStatus String?        // EMPLOYEE, INTERN, CONTRACTOR, CONSULTANT, etc.
+  allowedModules      String[]       @default([])
+  permissions         String[]       @default([])
+  startDate           DateTime?
+  endDate             DateTime?
+  managerId           String?
+  contractType        String?
+  message             String?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([token])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  status    String   @default("PENDING") // PENDING, USED, EXPIRED
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Document {
+  id               String          @id @default(uuid())
+  userId           String
+  name             String
+  type             String          // e.g., CV, DIPLOMA, ID_CARD, CONTRACT, PAYSLIP, etc.
+  category         String          // UPLOADED (personal) or RECEIVED (from company)
+  description      String?
+  fileUrl          String
+  fileSize         Int?
+  mimeType         String?
+  issuedDate       DateTime?
+  expiryDate       DateTime?
+  issuerName       String?         // name of issuing company/organization
+  issuerCompanyId  String?         // optional link to a Company in the system
+  visibility       String          @default("PRIVATE") // PRIVATE, PUBLIC, SHARED
+  tags             String[]        @default([])
+  status           String          @default("ACTIVE") // ACTIVE, ARCHIVED, DRAFT
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuerCompany    Company?        @relation("IssuedDocuments", fields: [issuerCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([issuerCompanyId])
+}
+
+model DocumentShare {
+  id             String          @id @default(uuid())
+  userId         String
+  token          String          @unique
+  password       String?
+  expiresAt      DateTime?
+  viewsCount     Int             @default(0)
+  maxViews       Int?
+  documentIds    String[]        @default([])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model CompanyPosition {
+  id                      String          @id @default(uuid())
+  companyId               String
+  name                    String
+  departmentId            String?
+  recommendedRoleId       String?
+  recommendedContractType String?
+  recommendedPermissions  String[]        @default([])
+  status                  String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  company                 Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department              CompanyDepartment? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([departmentId])
+}
+
+model CompanyDepartment {
+  id          String            @id @default(uuid())
+  companyId   String
+  name        String
+  status      String            @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  positions   CompanyPosition[]
+
+  @@index([companyId])
+}
